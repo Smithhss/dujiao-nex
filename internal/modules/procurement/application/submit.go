@@ -67,12 +67,13 @@ func (s *Service) SubmitToUpstream(procurementOrderID uint) error {
 	}
 
 	// 构建上游请求
+	// 上游当前不支持 callback_url（传值会 400 callback_not_supported），
+	// 履约状态改由 PollUpstreamStatus / SyncAcceptedOrders 轮询获取。
 	req := procurementcontract.CreateOrderRequest{
 		SKUID:             upstreamSKUID,
 		Quantity:          item.Quantity,
 		DownstreamOrderNo: localOrder.OrderNo,
 		TraceID:           procOrder.TraceID,
-		CallbackURL:       connection.CallbackURL(),
 	}
 
 	// 传递人工表单数据（如有）

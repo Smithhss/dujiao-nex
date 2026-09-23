@@ -109,7 +109,7 @@ type CreateUpstreamOrderReq struct {
 	ManualFormData    jsonmap.JSON `json:"manual_form_data,omitempty"`
 	DownstreamOrderNo string       `json:"downstream_order_no"`
 	TraceID           string       `json:"trace_id"`
-	CallbackURL       string       `json:"callback_url"`
+	CallbackURL       string       `json:"callback_url,omitempty"`
 }
 
 // CreateUpstreamOrderResp 创建上游采购单响应

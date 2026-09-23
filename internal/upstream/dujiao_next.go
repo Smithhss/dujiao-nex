@@ -243,7 +243,8 @@ func (a *DujiaoNextAdapter) doRequest(ctx context.Context, method, path string, 
 	}
 
 	timestamp := time.Now().Unix()
-	signature := Sign(a.apiSecret, method, signPath, timestamp, bodyBytes)
+	nonce := uuid.NewString()
+	signature := SignV2(a.apiSecret, method, signPath, timestamp, nonce, bodyBytes)
 
 	url := a.baseURL + path
 	var bodyReader io.Reader
@@ -258,6 +259,7 @@ func (a *DujiaoNextAdapter) doRequest(ctx context.Context, method, path string, 
 
 	req.Header.Set(HeaderApiKey, a.apiKey)
 	req.Header.Set(HeaderTimestamp, fmt.Sprintf("%d", timestamp))
+	req.Header.Set(HeaderNonce, nonce)
 	req.Header.Set(HeaderSignature, signature)
 	if bodyBytes != nil {
 		req.Header.Set("Content-Type", "application/json")
