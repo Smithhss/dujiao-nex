@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -86,7 +87,9 @@ func (s *Service) SubmitToUpstream(procurementOrderID uint) error {
 
 	resp, err := connection.CreateOrder(ctx, req)
 	if err != nil {
-		return s.handleSubmitFailure(procOrder, connection, fmt.Sprintf("upstream request error: %v", err), true)
+		// 401/403 等鉴权失败：不自动重试，交人工处理（上游协议硬要求）
+		retryable := !errors.Is(err, procurementcontract.ErrUpstreamAuthFailed)
+		return s.handleSubmitFailure(procOrder, connection, fmt.Sprintf("upstream request error: %v", err), retryable)
 	}
 
 	if !resp.OK {
@@ -263,6 +266,21 @@ func isRetryableErrorCode(code string) bool {
 		"forbidden":            true,
 		"duplicate_order":      true,
 		"product_out_of_stock": true,
+		// 上游 v2 文档 §10 + 2026-09-22 实测（未鉴权时上游实际返回 authentication_failed）
+		"missing_auth_headers":   true,
+		"missing_nonce":          true,
+		"invalid_timestamp":      true,
+		"timestamp_expired":      true,
+		"invalid_nonce":          true,
+		"invalid_signature":      true,
+		"invalid_api_key":        true,
+		"user_disabled":          true,
+		"authentication_failed":  true,
+		"replay_detected":        true, // 需换新 nonce 重新签名，交人工确认后再试
+		"idempotency_conflict":   true,
+		"insufficient_stock":     true,
+		"cancel_not_allowed":     true,
+		"callback_not_supported": true,
 	}
 	return !nonRetryable[strings.ToLower(strings.TrimSpace(code))]
 }

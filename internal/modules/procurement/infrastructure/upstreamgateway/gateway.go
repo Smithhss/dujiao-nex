@@ -2,6 +2,7 @@ package upstreamgateway
 
 import (
 	"context"
+	"fmt"
 
 	procurementcontract "github.com/dujiao-next/internal/modules/procurement/contract"
 	siteconnectiondomain "github.com/dujiao-next/internal/modules/siteconnection/domain"
@@ -55,7 +56,7 @@ func (s *session) CreateOrder(ctx context.Context, request procurementcontract.C
 		DownstreamOrderNo: request.DownstreamOrderNo, TraceID: request.TraceID, CallbackURL: request.CallbackURL,
 	})
 	if err != nil {
-		return nil, err
+		return nil, wrapUpstreamError(err)
 	}
 	return &procurementcontract.CreateOrderResult{
 		OK: result.OK, OrderID: result.OrderID, OrderNo: result.OrderNo,
@@ -67,7 +68,7 @@ func (s *session) CreateOrder(ctx context.Context, request procurementcontract.C
 func (s *session) GetOrder(ctx context.Context, orderID uint) (*procurementcontract.UpstreamOrder, error) {
 	detail, err := s.adapter.GetOrder(ctx, orderID)
 	if err != nil {
-		return nil, err
+		return nil, wrapUpstreamError(err)
 	}
 	result := &procurementcontract.UpstreamOrder{
 		OrderID: detail.OrderID, OrderNo: detail.OrderNo, Status: detail.Status,
@@ -81,7 +82,19 @@ func (s *session) GetOrder(ctx context.Context, orderID uint) (*procurementcontr
 }
 
 func (s *session) CancelOrder(ctx context.Context, orderID uint) error {
-	return s.adapter.CancelOrder(ctx, orderID)
+	if err := s.adapter.CancelOrder(ctx, orderID); err != nil {
+		return wrapUpstreamError(err)
+	}
+	return nil
+}
+
+// wrapUpstreamError 把上游包的鉴权失败哨兵翻译成本模块 contract 层哨兵，
+// 让 application 层无需（也不允许）直接依赖 internal/upstream。
+func wrapUpstreamError(err error) error {
+	if err == nil || !upstream.IsUpstreamAuthError(err) {
+		return err
+	}
+	return fmt.Errorf("%w: %v", procurementcontract.ErrUpstreamAuthFailed, err)
 }
 
 func fromUpstreamFulfillment(value *upstream.UpstreamFulfillment) *procurementcontract.Fulfillment {

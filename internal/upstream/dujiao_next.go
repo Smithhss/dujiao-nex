@@ -20,6 +20,25 @@ import (
 	"github.com/google/uuid"
 )
 
+// ErrUpstreamAuthFailed 上游鉴权失败（401/403）。
+// 上游协议要求：这类错误必须暂停自动调用并告警，禁止自动重试。
+var ErrUpstreamAuthFailed = errors.New("upstream auth failed")
+
+// IsUpstreamAuthError 判断错误是否属于上游鉴权失败（401/403）。
+func IsUpstreamAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrUpstreamAuthFailed) {
+		return true
+	}
+	var ue *upstreamHTTPError
+	if errors.As(err, &ue) {
+		return ue.Status == http.StatusUnauthorized || ue.Status == http.StatusForbidden
+	}
+	return false
+}
+
 // upstreamHTTPError 上游返回非 200 时的结构化错误
 type upstreamHTTPError struct {
 	Status  int
@@ -277,21 +296,36 @@ func (a *DujiaoNextAdapter) doRequest(ctx context.Context, method, path string, 
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		logger.Warnw("upstream_request_error",
-			"method", method, "path", path,
-			"status", resp.StatusCode, "body", string(respBody))
 		// 尝试解析结构化错误响应
 		var errPayload struct {
 			ErrorCode    string `json:"error_code"`
 			ErrorMessage string `json:"error_message"`
 		}
 		_ = json.Unmarshal(respBody, &errPayload)
-		return &upstreamHTTPError{
+
+		upstreamErr := &upstreamHTTPError{
 			Status:  resp.StatusCode,
 			Code:    errPayload.ErrorCode,
 			Message: errPayload.ErrorMessage,
 			Body:    string(respBody),
 		}
+
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			// 鉴权失败：只记录定位字段，不打印响应体（避免敏感内容进日志），
+			// 并让上层据此判定"不可重试"。
+			logger.Errorw("upstream_auth_failed",
+				"method", method,
+				"path", path,
+				"status", resp.StatusCode,
+				"code", errPayload.ErrorCode,
+			)
+			return fmt.Errorf("%w: %v", ErrUpstreamAuthFailed, upstreamErr)
+		}
+
+		logger.Warnw("upstream_request_error",
+			"method", method, "path", path,
+			"status", resp.StatusCode, "body", string(respBody))
+		return upstreamErr
 	}
 
 	if result != nil {

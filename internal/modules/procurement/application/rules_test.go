@@ -159,3 +159,27 @@ func TestIsUpstreamTransitionAllowed(t *testing.T) {
 		}
 	}
 }
+
+// TestIsRetryableErrorCodeAuthFailures 验证鉴权/时间/重放类错误一律不自动重试，
+// 只有限流与服务端临时故障才允许退避重试。
+func TestIsRetryableErrorCodeAuthFailures(t *testing.T) {
+	nonRetryable := []string{
+		"missing_auth_headers", "missing_nonce", "invalid_timestamp", "timestamp_expired",
+		"invalid_nonce", "invalid_signature", "invalid_api_key", "user_disabled",
+		"authentication_failed",
+		"replay_detected", "idempotency_conflict",
+		"insufficient_balance", "insufficient_stock", "callback_not_supported",
+	}
+	for _, code := range nonRetryable {
+		if isRetryableErrorCode(code) {
+			t.Fatalf("%s 不应自动重试", code)
+		}
+	}
+
+	retryable := []string{"rate_limited", "service_unavailable", "internal_error"}
+	for _, code := range retryable {
+		if !isRetryableErrorCode(code) {
+			t.Fatalf("%s 应允许按指数退避重试", code)
+		}
+	}
+}
