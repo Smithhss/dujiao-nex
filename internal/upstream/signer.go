@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -18,6 +19,8 @@ const (
 	HeaderTimestamp = "Dujiao-Next-Timestamp"
 	// HeaderSignature 签名 header
 	HeaderSignature = "Dujiao-Next-Signature"
+	// HeaderNonce v2 签名要求的随机串 header（每次请求唯一，推荐 UUID v4）
+	HeaderNonce = "Dujiao-Next-Nonce"
 
 	// MaxTimestampSkew 最大时间戳偏差（秒）
 	MaxTimestampSkew = 60
@@ -54,4 +57,28 @@ func md5Hex(data []byte) string {
 	h := md5.New()
 	h.Write(data)
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// SignV2 生成上游《余额自动下单 API 接口文档 v2.0》要求的 HMAC-SHA256 签名。
+//
+// canonical = METHOD + "\n" + PATH + "\n" + TIMESTAMP + "\n" + NONCE + "\n" + SHA256_HEX(RAW_BODY)
+//   - METHOD 大写；PATH 只含路径（不含域名与 query）；
+//   - TIMESTAMP 为 Unix 秒；NONCE 为每次请求唯一的随机串（UUID v4）；
+//   - SHA256 基于实际发送的原始 body 字节，空 body 使用 SHA256 空串摘要；
+//   - secret 按 UTF-8 原文字节作为 HMAC key，禁止 hex/Base64 解码。
+//
+// 与 v1 的 Sign 的差异：body 摘要由 MD5 改为 SHA256，canonical 增加 NONCE 段。
+func SignV2(secret, method, path string, timestamp int64, nonce string, body []byte) string {
+	bodyHash := sha256.Sum256(body)
+	canonical := strings.Join([]string{
+		strings.ToUpper(method),
+		path,
+		fmt.Sprintf("%d", timestamp),
+		nonce,
+		hex.EncodeToString(bodyHash[:]),
+	}, "\n")
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(canonical))
+	return hex.EncodeToString(mac.Sum(nil))
 }

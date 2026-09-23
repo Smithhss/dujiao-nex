@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -81,5 +82,41 @@ func TestParseTimestamp(t *testing.T) {
 	_, err = ParseTimestamp("not-a-number")
 	if err == nil {
 		t.Fatal("expected error for non-numeric string")
+	}
+}
+
+// TestSignV2FixedVector 校验上游《余额自动下单 API 接口文档 v2.0》§3.3 的固定测试向量。
+//
+// 注意：该文档正文粘贴的 secret 只有 112 位（"0123456789abcdef" × 7），
+// 但同段声明为 128 位；用 128 位（× 8）才能复现文档公布的签名（见 docs/reference 与计划附录 A）。
+func TestSignV2FixedVector(t *testing.T) {
+	secret := strings.Repeat("0123456789abcdef", 8) // 128 位
+	const nonce = "550e8400-e29b-41d4-a716-446655440000"
+
+	got := SignV2(secret, "POST", "/api/v1/upstream/ping", 1709625600, nonce, nil)
+
+	const want = "09cf5cedb04ba4b32552c7e9d8c533368eeb48dd9ba1b72fd1e2c151e9487819"
+	if got != want {
+		t.Fatalf("v2 signature mismatch\n got=%s\nwant=%s", got, want)
+	}
+}
+
+// TestSignV2UsesRawBodyBytes 签名必须基于"实际发送的原始字节"：JSON 空格变化必须导致签名变化。
+func TestSignV2UsesRawBodyBytes(t *testing.T) {
+	const secret = "test-secret"
+	a := SignV2(secret, "POST", "/api/v1/upstream/orders", 1709625600, "nonce-a", []byte(`{"sku_id":1,"quantity":1}`))
+	b := SignV2(secret, "POST", "/api/v1/upstream/orders", 1709625600, "nonce-a", []byte(`{"sku_id":1,"quantity": 1}`))
+	if a == b {
+		t.Fatal("body 变了签名必须变：签名基于原始 body 字节")
+	}
+}
+
+// TestSignV2NonceChangesSignature 每次请求换 nonce 必须改变签名（重放保护）。
+func TestSignV2NonceChangesSignature(t *testing.T) {
+	const secret = "test-secret"
+	a := SignV2(secret, "POST", "/api/v1/upstream/ping", 1709625600, "nonce-a", nil)
+	b := SignV2(secret, "POST", "/api/v1/upstream/ping", 1709625600, "nonce-b", nil)
+	if a == b {
+		t.Fatal("nonce 变了签名必须变")
 	}
 }
