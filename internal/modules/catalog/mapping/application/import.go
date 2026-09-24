@@ -11,6 +11,7 @@ import (
 	mappingcontract "github.com/dujiao-next/internal/modules/catalog/mapping/contract"
 	mappingdomain "github.com/dujiao-next/internal/modules/catalog/mapping/domain"
 	productcontract "github.com/dujiao-next/internal/modules/catalog/product/contract"
+	settingsintegration "github.com/dujiao-next/internal/modules/settings/schema/integration"
 	siteconnectioncontract "github.com/dujiao-next/internal/modules/siteconnection/contract"
 
 	"github.com/dujiao-next/internal/constants"
@@ -103,38 +104,17 @@ func (s *Service) importUpstreamProduct(connectionID uint, upstreamProductID uin
 	localImages := s.downloadImages(ctx, adapter, upProduct.Images)
 
 	// 下载 Content 中引用的图片
-	localContent := s.downloadContentImages(ctx, adapter, upProduct.Content)
+	localContent := sanitizeImportedJSON(s.downloadContentImages(ctx, adapter, upProduct.Content))
 
 	// 确定交付类型：上游商品映射后统一使用 upstream 类型
 	fulfillmentType := constants.FulfillmentTypeUpstream
 
-	// 解析价格（先汇率转换，再应用加价比例）
+	// 解析价格（先汇率转换，再应用加价比例）；商品级价格策略由后台"上游同步"动态配置决定
 	exchangeRate := conn.ExchangeRate
 	markupPercent := conn.PriceMarkupPercent
 	roundingMode := conn.PriceRoundingMode
 
-	priceAmount, priceErr := decimal.NewFromString(upProduct.PriceAmount)
-	if priceErr != nil {
-		logger.Warnw("import_product_price_parse_error",
-			"upstream_product_id", upstreamProductID,
-			"price_amount", upProduct.PriceAmount,
-			"error", priceErr,
-		)
-		priceAmount = decimal.Zero
-	}
-	costPriceAmount := convertCurrency(priceAmount, exchangeRate) // 成本价 = 上游价格 × 汇率（本地币种，不含加价）
-	priceAmount = CalculateLocalPrice(priceAmount, exchangeRate, markupPercent, roundingMode)
-	if priceAmount.LessThanOrEqual(decimal.Zero) && len(upProduct.SKUs) > 0 {
-		// 取转换加价后 SKU 最低价
-		for _, sku := range upProduct.SKUs {
-			skuPrice, _ := decimal.NewFromString(sku.PriceAmount)
-			localPrice := CalculateLocalPrice(skuPrice, exchangeRate, markupPercent, roundingMode)
-			if localPrice.GreaterThan(decimal.Zero) && (priceAmount.IsZero() || localPrice.LessThan(priceAmount)) {
-				priceAmount = localPrice
-				costPriceAmount = convertCurrency(skuPrice, exchangeRate)
-			}
-		}
-	}
+	priceAmount, costPriceAmount := s.resolveImportedProductPrice(upProduct, exchangeRate, markupPercent, roundingMode)
 
 	// 自动生成 slug（如果未提供）
 	if slug == "" {
@@ -145,9 +125,9 @@ func (s *Service) importUpstreamProduct(connectionID uint, upstreamProductID uin
 	product := productdomain.Product{
 		CategoryID:           categoryID,
 		Slug:                 slug,
-		SeoMetaJSON:          upProduct.SeoMeta,
+		SeoMetaJSON:          sanitizeImportedJSON(upProduct.SeoMeta),
 		TitleJSON:            upProduct.Title,
-		DescriptionJSON:      upProduct.Description,
+		DescriptionJSON:      sanitizeImportedJSON(upProduct.Description),
 		ContentJSON:          localContent,
 		ManualFormSchemaJSON: upProduct.ManualFormSchema,
 		PriceAmount:          money.FromDecimal(priceAmount.Round(2)),
@@ -609,4 +589,109 @@ func (s *Service) ListUpstreamCategories(connectionID uint) ([]upstream.Upstream
 	}
 
 	return result.Categories, result.Supported, nil
+}
+
+// upstreamPriceStrategy 读取后台动态配置的商品级价格策略。
+// 读取失败或未配置时回落到 upstream_price（与历史行为一致）。
+func (s *Service) upstreamPriceStrategy() string {
+	if s == nil || s.settings == nil {
+		return settingsintegration.UpstreamPriceStrategyUpstream
+	}
+	cfg, err := s.settings.GetUpstreamSyncConfig("")
+	if err != nil {
+		return settingsintegration.UpstreamPriceStrategyUpstream
+	}
+	return settingsintegration.NormalizeUpstreamPriceStrategy(cfg.PriceStrategy)
+}
+
+// resolveImportedProductPrice 按策略决定导入商品的商品级基准价与成本价。
+//   - min_sku：取所有 SKU 中最低的本地价（避免卡片显示高价 SKU）
+//   - upstream_price：使用上游商品级价格；上游价缺失时兜底取最低 SKU 价
+func (s *Service) resolveImportedProductPrice(upProduct *upstream.UpstreamProduct, exchangeRate, markupPercent decimal.Decimal, roundingMode string) (decimal.Decimal, decimal.Decimal) {
+	if s.upstreamPriceStrategy() == settingsintegration.UpstreamPriceStrategyMinSKU {
+		if minPrice, minCost, ok := minSKULocalPrice(upProduct, exchangeRate, markupPercent, roundingMode); ok {
+			return minPrice, minCost
+		}
+	}
+
+	priceAmount, priceErr := decimal.NewFromString(upProduct.PriceAmount)
+	if priceErr != nil {
+		logger.Warnw("import_product_price_parse_error",
+			"price_amount", upProduct.PriceAmount,
+			"error", priceErr,
+		)
+		priceAmount = decimal.Zero
+	}
+	costPriceAmount := convertCurrency(priceAmount, exchangeRate) // 成本价 = 上游价格 × 汇率（本地币种，不含加价）
+	priceAmount = CalculateLocalPrice(priceAmount, exchangeRate, markupPercent, roundingMode)
+
+	if priceAmount.LessThanOrEqual(decimal.Zero) {
+		if minPrice, minCost, ok := minSKULocalPrice(upProduct, exchangeRate, markupPercent, roundingMode); ok {
+			return minPrice, minCost
+		}
+	}
+	return priceAmount, costPriceAmount
+}
+
+// minSKULocalPrice 返回转换并加价后的最低 SKU 价与对应成本价。
+func minSKULocalPrice(upProduct *upstream.UpstreamProduct, exchangeRate, markupPercent decimal.Decimal, roundingMode string) (decimal.Decimal, decimal.Decimal, bool) {
+	if upProduct == nil || len(upProduct.SKUs) == 0 {
+		return decimal.Zero, decimal.Zero, false
+	}
+	var minPrice, minCost decimal.Decimal
+	found := false
+	for _, sku := range upProduct.SKUs {
+		skuPrice, err := decimal.NewFromString(sku.PriceAmount)
+		if err != nil {
+			continue
+		}
+		localPrice := CalculateLocalPrice(skuPrice, exchangeRate, markupPercent, roundingMode)
+		if localPrice.LessThanOrEqual(decimal.Zero) {
+			continue
+		}
+		if !found || localPrice.LessThan(minPrice) {
+			minPrice = localPrice
+			minCost = convertCurrency(skuPrice, exchangeRate)
+			found = true
+		}
+	}
+	return minPrice, minCost, found
+}
+
+var (
+	importedAnchorPattern = regexp.MustCompile(`(?is)<a\b[^>]*>(.*?)</a>`)
+	importedURLPattern    = regexp.MustCompile(`(?i)\b(?:https?://|www\.)[^\s<>"']+`)
+	// 无协议域名/短链：t.me/xxx、982xj.xyz、catfk.com/shop/xiaojiu 等
+	importedBareDomainPattern = regexp.MustCompile(`(?i)\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:com|cn|net|org|io|me|xyz|top|shop|vip|cc|info|app|dev|link)(?:/[^\s<>"']*)?`)
+	// 上游客服/频道的 @handle
+	importedHandlePattern = regexp.MustCompile(`@[A-Za-z][A-Za-z0-9_]{3,}`)
+)
+
+// sanitizeImportedText 去掉上游正文里的外链与联系方式（保留可读文字），
+// 避免顾客顺着上游自家店铺/兑换站链接或客服号绕过代理站直接下单。
+func sanitizeImportedText(text string) string {
+	if text == "" {
+		return text
+	}
+	cleaned := importedAnchorPattern.ReplaceAllString(text, "$1")
+	cleaned = importedURLPattern.ReplaceAllString(cleaned, "[链接已隐藏]")
+	cleaned = importedBareDomainPattern.ReplaceAllString(cleaned, "[链接已隐藏]")
+	cleaned = importedHandlePattern.ReplaceAllString(cleaned, "[联系方式已隐藏]")
+	return cleaned
+}
+
+// sanitizeImportedJSON 对多语言 JSON 字段逐条做外链清理。
+func sanitizeImportedJSON(value jsonmap.JSON) jsonmap.JSON {
+	if len(value) == 0 {
+		return value
+	}
+	cleaned := make(jsonmap.JSON, len(value))
+	for key, raw := range value {
+		if text, ok := raw.(string); ok {
+			cleaned[key] = sanitizeImportedText(text)
+			continue
+		}
+		cleaned[key] = raw
+	}
+	return cleaned
 }

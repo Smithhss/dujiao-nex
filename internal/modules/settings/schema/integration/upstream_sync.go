@@ -2,6 +2,7 @@ package settingsintegration
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dujiao-next/internal/constants"
@@ -25,6 +26,14 @@ const (
 	upstreamSyncConnConcurrencyMax = 10
 )
 
+// 上游商品映射后的商品级价格策略。
+const (
+	// UpstreamPriceStrategyUpstream 使用上游商品级价格（默认，保持既有行为，便于人工调价）
+	UpstreamPriceStrategyUpstream = "upstream_price"
+	// UpstreamPriceStrategyMinSKU 使用该商品所有 SKU 中的最低本地价（避免卡片显示高价 SKU）
+	UpstreamPriceStrategyMinSKU = "min_sku"
+)
+
 // UpstreamSyncConfig 是上游同步设置的 typed representation。
 type UpstreamSyncConfig struct {
 	IntervalMinutes           int  `json:"interval_minutes"`
@@ -32,6 +41,8 @@ type UpstreamSyncConfig struct {
 	SyncPageSize              int  `json:"sync_page_size"`
 	SyncMaxPages              int  `json:"sync_max_pages"`
 	SyncConnConcurrency       int  `json:"sync_conn_concurrency"`
+	// PriceStrategy 决定映射商品的商品级价格如何产生：upstream_price（上游价，默认）或 min_sku（最低 SKU 价）
+	PriceStrategy string `json:"price_strategy"`
 }
 
 // DefaultUpstreamSyncConfig 返回稳定的上游同步默认设置。
@@ -42,6 +53,7 @@ func DefaultUpstreamSyncConfig() UpstreamSyncConfig {
 		SyncPageSize:              upstreamSyncPageSizeDefault,
 		SyncMaxPages:              upstreamSyncMaxPagesDefault,
 		SyncConnConcurrency:       upstreamSyncConnConcurrencyDef,
+		PriceStrategy:             UpstreamPriceStrategyUpstream,
 	}
 }
 
@@ -71,7 +83,18 @@ func NormalizeUpstreamSyncConfig(config UpstreamSyncConfig) UpstreamSyncConfig {
 	if config.SyncConnConcurrency > upstreamSyncConnConcurrencyMax {
 		config.SyncConnConcurrency = upstreamSyncConnConcurrencyMax
 	}
+	config.PriceStrategy = NormalizeUpstreamPriceStrategy(config.PriceStrategy)
 	return config
+}
+
+// NormalizeUpstreamPriceStrategy 归一化价格策略，未知值回落到上游商品价。
+func NormalizeUpstreamPriceStrategy(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case UpstreamPriceStrategyMinSKU:
+		return UpstreamPriceStrategyMinSKU
+	default:
+		return UpstreamPriceStrategyUpstream
+	}
 }
 
 // DecodeUpstreamSyncConfig 从持久化 JSON 解码，并对缺失字段使用 fallback。
@@ -92,6 +115,9 @@ func DecodeUpstreamSyncConfig(raw jsonmap.JSON, fallback UpstreamSyncConfig) Ups
 	if parsed, err := settingsvalue.ParseInt(raw[constants.SettingFieldUpstreamSyncConcurrency]); err == nil {
 		result.SyncConnConcurrency = parsed
 	}
+	if value, exists := raw[constants.SettingFieldUpstreamPriceStrategy]; exists {
+		result.PriceStrategy = NormalizeUpstreamPriceStrategy(settingsvalue.NormalizeTextWithRuneLimit(value, 32))
+	}
 	return NormalizeUpstreamSyncConfig(result)
 }
 
@@ -104,6 +130,7 @@ func EncodeUpstreamSyncConfig(config UpstreamSyncConfig) jsonmap.JSON {
 		constants.SettingFieldUpstreamSyncPageSize:    normalized.SyncPageSize,
 		constants.SettingFieldUpstreamSyncMaxPages:    normalized.SyncMaxPages,
 		constants.SettingFieldUpstreamSyncConcurrency: normalized.SyncConnConcurrency,
+		constants.SettingFieldUpstreamPriceStrategy:   normalized.PriceStrategy,
 	}
 }
 

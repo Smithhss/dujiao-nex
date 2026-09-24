@@ -503,6 +503,8 @@ const (
 	SettingFieldUpstreamSyncPageSize    = "sync_page_size"
 	SettingFieldUpstreamSyncMaxPages    = "sync_max_pages"
 	SettingFieldUpstreamSyncConcurrency = "sync_conn_concurrency"
+	// SettingFieldUpstreamPriceStrategy 上游商品映射后的商品级价格策略（upstream_price / min_sku）
+	SettingFieldUpstreamPriceStrategy = "price_strategy"
 
 	SettingKeyCallbackRoutesConfig = "callback_routes_config"
 

@@ -10,6 +10,8 @@ import (
 	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
 	productpresenter "github.com/dujiao-next/internal/modules/catalog/product/transport/presenter"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/dujiao-next/internal/constants"
 	domaincatalog "github.com/dujiao-next/internal/modules/catalog"
 	categorypresenter "github.com/dujiao-next/internal/modules/catalog/category/transport/presenter"
@@ -142,7 +144,7 @@ func (h *PublicHandler) decoratePublicProduct(product *productdomain.Product, pr
 	}
 
 	item := publicProductView{Product: *product}
-	displayPrice := resolvePublicDisplayPrice(product)
+	displayPrice := resolvePublicDisplayPrice(product, h.displayPriceStrategy())
 	displaySKUID := resolvePublicDisplaySKUID(product)
 	item.Product.PriceAmount = displayPrice
 	h.decorateProductStock(product, &item)
@@ -290,9 +292,37 @@ func (h *PublicHandler) decoratePublicProductForTenant(
 	return item.toProductResp(), nil
 }
 
-func resolvePublicDisplayPrice(product *productdomain.Product) money.Amount {
+// displayPriceStrategy 返回当前配置的展示价策略（未注入时使用历史行为）。
+func (h *PublicHandler) displayPriceStrategy() string {
+	if h == nil || h.priceStrategy == nil {
+		return ""
+	}
+	return h.priceStrategy.GetUpstreamPriceStrategy()
+}
+
+// resolvePublicDisplayPrice 依据后台配置的策略计算前台展示价。
+//   - min_sku：取所有活跃 SKU 中的最低价，避免列表页展示高价 SKU 误导顾客
+//   - 其它（默认）：取第一个活跃 SKU 价，保持历史行为
+func resolvePublicDisplayPrice(product *productdomain.Product, strategy string) money.Amount {
 	if product == nil {
 		return money.Amount{}
+	}
+	if strategy == displayPriceStrategyMinSKU {
+		best := money.Amount{}
+		found := false
+		for _, sku := range product.SKUs {
+			if !sku.IsActive || sku.PriceAmount.Decimal.LessThanOrEqual(decimal.Zero) {
+				continue
+			}
+			if !found || sku.PriceAmount.Decimal.LessThan(best.Decimal) {
+				best = sku.PriceAmount
+				found = true
+			}
+		}
+		if found {
+			return best
+		}
+		return product.PriceAmount
 	}
 	for _, sku := range product.SKUs {
 		if !sku.IsActive {

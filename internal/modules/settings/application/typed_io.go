@@ -82,6 +82,19 @@ func (s *Service) GetUpstreamSyncConfig(fallbackInterval string) (settingsintegr
 	return settingsintegration.DecodeUpstreamSyncConfig(value, fallback), nil
 }
 
+// GetUpstreamPriceStrategy 返回上游映射商品的前台展示价策略。
+// 取值：min_sku（最低活跃 SKU 价）或 upstream_price（默认，保持历史的首个 SKU 价行为）。
+func (s *Service) GetUpstreamPriceStrategy() string {
+	if s == nil {
+		return settingsintegration.UpstreamPriceStrategyUpstream
+	}
+	cfg, err := s.GetUpstreamSyncConfig("")
+	if err != nil {
+		return settingsintegration.UpstreamPriceStrategyUpstream
+	}
+	return settingsintegration.NormalizeUpstreamPriceStrategy(cfg.PriceStrategy)
+}
+
 // GetUpstreamSyncInterval 返回归一化后的同步间隔。
 func (s *Service) GetUpstreamSyncInterval(fallbackInterval string) (time.Duration, error) {
 	config, err := s.GetUpstreamSyncConfig(fallbackInterval)

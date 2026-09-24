@@ -6,6 +6,7 @@ import (
 	siteconnectioncontract "github.com/dujiao-next/internal/modules/siteconnection/contract"
 
 	productdomain "github.com/dujiao-next/internal/modules/catalog/product/domain"
+	settingsintegration "github.com/dujiao-next/internal/modules/settings/schema/integration"
 
 	"github.com/dujiao-next/internal/shared/money"
 )
@@ -54,8 +55,14 @@ func (s *Service) ReapplyMarkup(connectionID uint) (int, error) {
 	return updated, nil
 }
 
-// recalcProductPrice 重新计算商品基准价格和成本价为最低活跃 SKU 价格
+// recalcProductPrice 按后台配置的价格策略重算商品级基准价与成本价。
+//   - min_sku：取最低活跃 SKU 价（避免卡片显示高价 SKU）
+//   - upstream_price：保留导入时或人工调整过的商品级价格，不做覆盖
 func (s *Service) recalcProductPrice(product *productdomain.Product) {
+	if s.upstreamPriceStrategy() != settingsintegration.UpstreamPriceStrategyMinSKU {
+		return
+	}
+
 	allSKUs, err := s.skus.ListByProduct(product.ID, true)
 	if err != nil || len(allSKUs) == 0 {
 		return

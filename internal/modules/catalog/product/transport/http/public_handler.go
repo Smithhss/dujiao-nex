@@ -34,6 +34,14 @@ type PublicProductQueries interface {
 	ApplyAutoStockCounts(products []productdomain.Product) error
 }
 
+// UpstreamPriceStrategyProvider 提供上游映射商品的前台展示价策略。
+type UpstreamPriceStrategyProvider interface {
+	GetUpstreamPriceStrategy() string
+}
+
+// displayPriceStrategyMinSKU 表示"取最低活跃 SKU 价"。
+const displayPriceStrategyMinSKU = "min_sku"
+
 // ResellerDisplayPricer 是分销站展示价解析端口。
 type ResellerDisplayPricer interface {
 	LoadDisplayPricingBatch(tenant reseller.TenantContext, products []productdomain.Product) (*reseller.DisplayPricingBatch, error)
@@ -64,13 +72,21 @@ type RelatedPostReader interface {
 
 // PublicHandler 处理公开商品目录 HTTP 请求。
 type PublicHandler struct {
-	products     PublicProductQueries
-	pricer       ResellerDisplayPricer
-	promotions   ProductPromotionDecorator
-	memberLevels MemberLevelPricing
-	mappings     LocalProductMappingReader
-	skuMappings  SKUMappingLookup
-	relatedPosts RelatedPostReader
+	products      PublicProductQueries
+	pricer        ResellerDisplayPricer
+	promotions    ProductPromotionDecorator
+	memberLevels  MemberLevelPricing
+	mappings      LocalProductMappingReader
+	skuMappings   SKUMappingLookup
+	relatedPosts  RelatedPostReader
+	priceStrategy UpstreamPriceStrategyProvider
+}
+
+// SetUpstreamPriceStrategy 注入前台展示价策略来源（装配时调用；未注入则保持历史行为）。
+func (h *PublicHandler) SetUpstreamPriceStrategy(provider UpstreamPriceStrategyProvider) {
+	if h != nil {
+		h.priceStrategy = provider
+	}
 }
 
 // NewPublicHandler 创建公开商品目录 Handler。
