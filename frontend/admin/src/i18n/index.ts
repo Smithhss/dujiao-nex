@@ -2803,6 +2803,15 @@ const messages = {
             minutesHint: '最小 5 分钟，最大 1440 分钟（24 小时）。商品较多的站点建议调大到 60~360 分钟。',
             restartHint: '修改后需重启 worker 进程才会生效。',
           },
+          priceStrategy: {
+            title: '导入价格策略',
+            subtitle: '决定导入/同步上游商品时使用的基准价，以及前台卡片价的展示口径。',
+            label: '价格策略',
+            placeholder: '选择价格策略',
+            upstreamPrice: '上游商品价（默认，便于人工调价）',
+            minSku: '最低 SKU 价（卡片显示最低价）',
+            hint: '选择"最低 SKU 价"后，导入、重新应用加价与前台展示价都会取最低活跃 SKU 的价格；"上游商品价"会保留你手工调整过的商品价。',
+          },
           preOrderCheck: {
             title: '下单前库存兜底校验',
             subtitle: '当本地缓存库存不足时，下单前实时向上游查询一次单品库存，避免出现"付款后无货"。',
@@ -7250,6 +7259,15 @@ const messages = {
             minutesHint: '最小 5 分鐘，最大 1440 分鐘（24 小時）。商品較多的站點建議調大到 60~360 分鐘。',
             restartHint: '修改後需重啟 worker 進程才會生效。',
           },
+          priceStrategy: {
+            title: '匯入價格策略',
+            subtitle: '決定匯入/同步上游商品時使用的基準價，以及前台卡片價的顯示口徑。',
+            label: '價格策略',
+            placeholder: '選擇價格策略',
+            upstreamPrice: '上游商品價（預設，便於人工調價）',
+            minSku: '最低 SKU 價（卡片顯示最低價）',
+            hint: '選擇「最低 SKU 價」後，匯入、重新套用加價與前台展示價都會取最低活躍 SKU 的價格；「上游商品價」會保留你手工調整過的商品價。',
+          },
           preOrderCheck: {
             title: '下單前庫存兜底校驗',
             subtitle: '當本地快取庫存不足時，下單前即時向上游查詢一次單品庫存，避免出現「付款後無貨」。',
@@ -11696,6 +11714,15 @@ const messages = {
             minutesLabel: 'Sync Interval (minutes)',
             minutesHint: 'Minimum 5 minutes, maximum 1440 minutes (24 hours). For sites with many products, 60~360 minutes is recommended.',
             restartHint: 'Requires worker process restart to take effect.',
+          },
+          priceStrategy: {
+            title: 'Import Price Strategy',
+            subtitle: 'Controls the base price used when importing/syncing upstream products, and how the storefront card price is derived.',
+            label: 'Price Strategy',
+            placeholder: 'Select a price strategy',
+            upstreamPrice: 'Upstream product price (default, keeps manual edits)',
+            minSku: 'Lowest SKU price (card shows the lowest price)',
+            hint: 'With "Lowest SKU price", import, markup re-apply and storefront display all use the lowest active SKU price. "Upstream product price" keeps prices you edited manually.',
           },
           preOrderCheck: {
             title: 'Pre-Order Stock Verification',
