@@ -54,19 +54,19 @@ export default defineConfig(({ mode }) => ({
     proxy: {
       // changeOrigin 必须为 false：保留原始子域名 Host，后端才能据此解析分销商租户
       '/api': {
-        target: 'http://localhost:8080',
+        target: process.env.VITE_API_TARGET || 'http://localhost:8080',
         changeOrigin: false,
       },
       '/uploads': {
-        target: 'http://localhost:8080',
+        target: process.env.VITE_API_TARGET || 'http://localhost:8080',
         changeOrigin: false,
       },
       '/sitemap.xml': {
-        target: 'http://localhost:8080',
+        target: process.env.VITE_API_TARGET || 'http://localhost:8080',
         changeOrigin: false,
       },
       '/robots.txt': {
-        target: 'http://localhost:8080',
+        target: process.env.VITE_API_TARGET || 'http://localhost:8080',
         changeOrigin: false,
       },
     }
