@@ -63,12 +63,23 @@ func InitDB(driver, dsn string, pool DBPoolConfig, mode string) error {
 }
 
 func newGORMLogger(mode string, writer gormlogger.Writer) gormlogger.Interface {
-	if !strings.EqualFold(strings.TrimSpace(mode), "release") {
-		return gormlogger.Default.LogMode(gormlogger.Info)
-	}
 	if writer == nil {
 		writer = log.New(os.Stdout, "\r\n", log.LstdFlags)
 	}
+
+	// 开发模式保留 SQL 日志，但必须参数化输出（用 ? 占位），
+	// 否则 site_connections.api_key 等敏感列的值会被原样写进日志。
+	// 注意不要退回 gormlogger.Default：它会忽略这里注入的 writer 并直接写 stdout。
+	if !strings.EqualFold(strings.TrimSpace(mode), "release") {
+		return gormlogger.New(writer, gormlogger.Config{
+			SlowThreshold:             2 * time.Second,
+			LogLevel:                  gormlogger.Info,
+			IgnoreRecordNotFoundError: true,
+			ParameterizedQueries:      true,
+			Colorful:                  false,
+		})
+	}
+
 	return gormlogger.New(writer, gormlogger.Config{
 		SlowThreshold:             2 * time.Second,
 		LogLevel:                  gormlogger.Warn,
