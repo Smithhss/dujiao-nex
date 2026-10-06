@@ -281,6 +281,9 @@ func isRetryableErrorCode(code string) bool {
 		"insufficient_stock":     true,
 		"cancel_not_allowed":     true,
 		"callback_not_supported": true,
+		// 上游文档 §10：请求格式错误与订单不存在同样不应重试
+		"bad_request":     true,
+		"order_not_found": true,
 	}
 	return !nonRetryable[strings.ToLower(strings.TrimSpace(code))]
 }

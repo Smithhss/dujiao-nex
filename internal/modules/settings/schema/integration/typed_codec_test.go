@@ -117,11 +117,11 @@ func TestUpstreamSyncCodecPreservesFallbackAndBounds(t *testing.T) {
 	decoded := DecodeUpstreamSyncConfig(jsonmap.JSON{
 		constants.SettingFieldUpstreamSyncIntervalMin: "360",
 		constants.SettingFieldUpstreamPreOrderCheck:   false,
-		constants.SettingFieldUpstreamSyncPageSize:    float64(100),
+		constants.SettingFieldUpstreamSyncPageSize:    float64(9999),
 		constants.SettingFieldUpstreamSyncMaxPages:    9999,
 		constants.SettingFieldUpstreamSyncConcurrency: 0,
 	}, fallback)
-	if decoded.IntervalMinutes != 360 || decoded.PreOrderStockCheckEnabled || decoded.SyncPageSize != 100 {
+	if decoded.IntervalMinutes != 360 || decoded.PreOrderStockCheckEnabled || decoded.SyncPageSize != 50 {
 		t.Fatalf("upstream decode mismatch: %#v", decoded)
 	}
 	if decoded.SyncMaxPages != 500 || decoded.SyncConnConcurrency != 3 {

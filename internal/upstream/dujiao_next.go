@@ -63,6 +63,9 @@ func extractUpstreamErrorCode(err error) string {
 	return ""
 }
 
+// maxProductPageSize 上游文档 §6.1 规定 page_size 最大 50，超出会被上游拒绝。
+const maxProductPageSize = 50
+
 // DujiaoNextAdapter Dujiao-Next 协议适配器
 type DujiaoNextAdapter struct {
 	baseURL    string
@@ -119,7 +122,16 @@ func (a *DujiaoNextAdapter) ListCategories(ctx context.Context) (*CategoryListRe
 
 // ListProducts 拉取上游商品列表
 func (a *DujiaoNextAdapter) ListProducts(ctx context.Context, opts ListProductsOpts) (*ProductListResult, error) {
-	path := fmt.Sprintf("/api/v1/upstream/products?page=%d&page_size=%d", opts.Page, opts.PageSize)
+	// 钳制到上游文档允许的范围：page ≥ 1、page_size ≤ 50（缺省 50）。
+	page := opts.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := opts.PageSize
+	if pageSize <= 0 || pageSize > maxProductPageSize {
+		pageSize = maxProductPageSize
+	}
+	path := fmt.Sprintf("/api/v1/upstream/products?page=%d&page_size=%d", page, pageSize)
 	if opts.UpdatedAfter != nil {
 		path += "&updated_after=" + opts.UpdatedAfter.Format(time.RFC3339)
 	}
@@ -158,6 +170,10 @@ func (a *DujiaoNextAdapter) GetProduct(ctx context.Context, productID uint) (*Up
 
 // CreateOrder 发起采购单
 func (a *DujiaoNextAdapter) CreateOrder(ctx context.Context, req CreateUpstreamOrderReq) (*CreateUpstreamOrderResp, error) {
+	// 上游文档 §7：余额下单只支持 wallet，显式传值便于上游按钱包扣款。
+	if strings.TrimSpace(req.PaymentMode) == "" {
+		req.PaymentMode = "wallet"
+	}
 	var result CreateUpstreamOrderResp
 	if err := a.doRequest(ctx, http.MethodPost, "/api/v1/upstream/orders", req, &result); err != nil {
 		return nil, err

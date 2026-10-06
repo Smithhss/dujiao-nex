@@ -106,6 +106,7 @@ type UpstreamSKU struct {
 type CreateUpstreamOrderReq struct {
 	SKUID             uint         `json:"sku_id"`
 	Quantity          int          `json:"quantity"`
+	PaymentMode       string       `json:"payment_mode,omitempty"` // 文档 §7：仅支持 wallet
 	ManualFormData    jsonmap.JSON `json:"manual_form_data,omitempty"`
 	DownstreamOrderNo string       `json:"downstream_order_no"`
 	TraceID           string       `json:"trace_id"`

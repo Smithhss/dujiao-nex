@@ -169,6 +169,7 @@ func TestIsRetryableErrorCodeAuthFailures(t *testing.T) {
 		"authentication_failed",
 		"replay_detected", "idempotency_conflict",
 		"insufficient_balance", "insufficient_stock", "callback_not_supported",
+		"bad_request", "order_not_found",
 	}
 	for _, code := range nonRetryable {
 		if isRetryableErrorCode(code) {

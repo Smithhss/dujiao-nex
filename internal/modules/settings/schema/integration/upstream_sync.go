@@ -17,7 +17,7 @@ const (
 
 	upstreamSyncPageSizeDefault    = 50
 	upstreamSyncPageSizeMin        = 10
-	upstreamSyncPageSizeMax        = 200
+	upstreamSyncPageSizeMax        = 50 // 上游文档 §6.1：page_size 最大 50
 	upstreamSyncMaxPagesDefault    = 200
 	upstreamSyncMaxPagesMin        = 10
 	upstreamSyncMaxPagesMax        = 500

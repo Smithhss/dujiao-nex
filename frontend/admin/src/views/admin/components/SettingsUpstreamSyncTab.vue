@@ -39,7 +39,7 @@ const loadConfig = async () => {
       form.interval_minutes = clamp(data.interval_minutes, 5, 1440, 5)
       form.price_strategy = data.price_strategy === 'min_sku' ? 'min_sku' : 'upstream_price'
       form.pre_order_stock_check_enabled = data.pre_order_stock_check_enabled !== false
-      form.sync_page_size = clamp(data.sync_page_size, 10, 200, 50)
+      form.sync_page_size = clamp(data.sync_page_size, 10, 50, 50)
       form.sync_max_pages = clamp(data.sync_max_pages, 10, 500, 200)
       form.sync_conn_concurrency = clamp(data.sync_conn_concurrency, 1, 10, 3)
     }
@@ -57,7 +57,7 @@ const save = async () => {
       interval_minutes: clamp(form.interval_minutes, 5, 1440, 5),
       price_strategy: form.price_strategy,
       pre_order_stock_check_enabled: form.pre_order_stock_check_enabled,
-      sync_page_size: clamp(form.sync_page_size, 10, 200, 50),
+      sync_page_size: clamp(form.sync_page_size, 10, 50, 50),
       sync_max_pages: clamp(form.sync_max_pages, 10, 500, 200),
       sync_conn_concurrency: clamp(form.sync_conn_concurrency, 1, 10, 3),
     }
@@ -148,7 +148,7 @@ onMounted(() => {
       </div>
       <div class="space-y-1">
         <label class="text-xs font-medium text-muted-foreground">{{ t('admin.settings.upstreamSync.pageSize.label') }}</label>
-        <Input v-model.number="form.sync_page_size" type="number" min="10" max="200" />
+        <Input v-model.number="form.sync_page_size" type="number" min="10" max="50" />
         <p class="text-xs text-muted-foreground">{{ t('admin.settings.upstreamSync.pageSize.hint') }}</p>
       </div>
     </div>

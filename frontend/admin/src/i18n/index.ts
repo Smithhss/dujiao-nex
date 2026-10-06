@@ -2822,7 +2822,7 @@ const messages = {
             title: '每页拉取数量',
             subtitle: '每次向上游请求拉取的商品数量。较小的值减少单次请求压力但增加总请求次数。',
             label: '每页数量',
-            hint: '最小 10，最大 200，默认 50。上游响应慢时可调小。',
+            hint: '最小 10，最大 50（上游接口上限），默认 50。上游响应慢时可调小。',
           },
           maxPages: {
             title: '最大翻页数',
@@ -7278,7 +7278,7 @@ const messages = {
             title: '每頁拉取數量',
             subtitle: '每次向上游請求拉取的商品數量。較小的值減少單次請求壓力但增加總請求次數。',
             label: '每頁數量',
-            hint: '最小 10，最大 200，預設 50。上游響應慢時可調小。',
+            hint: '最小 10，最大 50（上游介面上限），預設 50。上游響應慢時可調小。',
           },
           maxPages: {
             title: '最大翻頁數',
@@ -11734,7 +11734,7 @@ const messages = {
             title: 'Page Size',
             subtitle: 'Number of products fetched per upstream request. Smaller values reduce per-request pressure but increase total requests.',
             label: 'Items per Page',
-            hint: 'Minimum 10, maximum 200, default 50. Lower this if upstream responses are slow.',
+            hint: 'Minimum 10, maximum 50 (upstream limit), default 50. Lower this if upstream responses are slow.',
           },
           maxPages: {
             title: 'Max Pages',
