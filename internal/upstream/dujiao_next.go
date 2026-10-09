@@ -40,18 +40,39 @@ func IsUpstreamAuthError(err error) bool {
 }
 
 // upstreamHTTPError 上游返回非 200 时的结构化错误
+// maxUpstreamErrorMessageLength 限制进入日志/订单错误信息的消息长度。
+const maxUpstreamErrorMessageLength = 200
+
+// upstreamHTTPError 保存上游非 200 响应的状态与结构化错误字段。
+// 注意：**不保存原始响应体**，避免卡密等敏感内容经错误信息落库或进日志（上游文档 §8）。
 type upstreamHTTPError struct {
 	Status  int
 	Code    string
 	Message string
-	Body    string
 }
 
 func (e *upstreamHTTPError) Error() string {
-	if e.Code != "" {
-		return fmt.Sprintf("upstream responded with status %d (%s): %s", e.Status, e.Code, e.Message)
+	message := sanitizeUpstreamMessage(e.Message)
+	switch {
+	case e.Code != "" && message != "":
+		return fmt.Sprintf("upstream responded with status %d (%s): %s", e.Status, e.Code, message)
+	case e.Code != "":
+		return fmt.Sprintf("upstream responded with status %d (%s)", e.Status, e.Code)
+	case message != "":
+		return fmt.Sprintf("upstream responded with status %d: %s", e.Status, message)
+	default:
+		return fmt.Sprintf("upstream responded with status %d: unexpected response", e.Status)
 	}
-	return fmt.Sprintf("upstream responded with status %d: %s", e.Status, e.Body)
+}
+
+// sanitizeUpstreamMessage 去空白并按字符截断，避免超长或异常内容进入日志/订单错误信息。
+func sanitizeUpstreamMessage(value string) string {
+	trimmed := strings.TrimSpace(value)
+	runes := []rune(trimmed)
+	if len(runes) <= maxUpstreamErrorMessageLength {
+		return trimmed
+	}
+	return string(runes[:maxUpstreamErrorMessageLength]) + "..."
 }
 
 // extractUpstreamErrorCode 从错误链中提取 upstreamHTTPError.Code
@@ -330,7 +351,6 @@ func (a *DujiaoNextAdapter) doRequest(ctx context.Context, method, path string, 
 			Status:  resp.StatusCode,
 			Code:    errPayload.ErrorCode,
 			Message: errPayload.ErrorMessage,
-			Body:    string(respBody),
 		}
 
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
@@ -345,9 +365,12 @@ func (a *DujiaoNextAdapter) doRequest(ctx context.Context, method, path string, 
 			return fmt.Errorf("%w: %v", ErrUpstreamAuthFailed, upstreamErr)
 		}
 
+		// 不记录原始响应体：可能含敏感内容（上游文档 §8）；只保留可定位的 status/code/message。
 		logger.Warnw("upstream_request_error",
 			"method", method, "path", path,
-			"status", resp.StatusCode, "body", string(respBody))
+			"status", resp.StatusCode,
+			"code", errPayload.ErrorCode,
+			"message", sanitizeUpstreamMessage(errPayload.ErrorMessage))
 		return upstreamErr
 	}
 

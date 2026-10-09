@@ -109,3 +109,25 @@ func TestCreateOrderRejectsQuantityOutOfDocRange(t *testing.T) {
 		t.Fatal("合法数量应调用上游")
 	}
 }
+
+// TestUpstreamNonOKResponseDoesNotLeakBody 上游文档 §8：卡密等敏感内容不得进入日志/错误信息。
+// 非 200 且没有 error_code 时（例如网关返回 HTML 错误页），错误信息不得携带原始响应体。
+func TestUpstreamNonOKResponseDoesNotLeakBody(t *testing.T) {
+	const secret = "CARD-SECRET-SHOULD-NOT-LEAK-1234"
+	adapter, closeFn := newTestAdapter(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("<html>bad gateway: " + secret + "</html>"))
+	})
+	defer closeFn()
+
+	_, err := adapter.GetOrder(context.Background(), 1)
+	if err == nil {
+		t.Fatal("期望返回错误")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("错误信息不应包含原始响应体: %v", err)
+	}
+	if !strings.Contains(err.Error(), "502") {
+		t.Fatalf("错误信息应保留 HTTP 状态码: %v", err)
+	}
+}
