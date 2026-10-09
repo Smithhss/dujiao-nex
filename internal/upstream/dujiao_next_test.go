@@ -77,3 +77,35 @@ func TestCreateOrderSendsWalletPaymentModeAndOmitsCallbackURL(t *testing.T) {
 		t.Fatalf("不应发送 callback_url，实际 body=%v", body)
 	}
 }
+
+// TestCreateOrderRejectsQuantityOutOfDocRange 上游文档 §7：quantity 为正整数且单次上限 100。
+// 超出范围时必须本地拦截，不发出上游请求（避免无意义的重试与上游 400）。
+func TestCreateOrderRejectsQuantityOutOfDocRange(t *testing.T) {
+	called := false
+	adapter, closeFn := newTestAdapter(t, func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"order_id":1,"status":"completed"}`))
+	})
+	defer closeFn()
+
+	for _, qty := range []int{0, -1, 101, 1000} {
+		if _, err := adapter.CreateOrder(context.Background(), CreateUpstreamOrderReq{
+			SKUID: 1, Quantity: qty, DownstreamOrderNo: "DJ20261007000000000001",
+		}); err == nil {
+			t.Fatalf("quantity=%d 应被本地拒绝", qty)
+		}
+	}
+	if called {
+		t.Fatal("数量非法时不应调用上游")
+	}
+
+	if _, err := adapter.CreateOrder(context.Background(), CreateUpstreamOrderReq{
+		SKUID: 1, Quantity: 100, DownstreamOrderNo: "DJ20261007000000000001",
+	}); err != nil {
+		t.Fatalf("quantity=100 属合法边界，应放行: %v", err)
+	}
+	if !called {
+		t.Fatal("合法数量应调用上游")
+	}
+}

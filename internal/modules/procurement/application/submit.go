@@ -14,6 +14,9 @@ import (
 	procurementdomain "github.com/dujiao-next/internal/modules/procurement/domain"
 )
 
+// maxUpstreamOrderQuantity 上游文档 §7：单次下单数量上限 100。
+const maxUpstreamOrderQuantity = 100
+
 // SubmitToUpstream Worker 调用：向上游站点提交采购单
 func (s *Service) SubmitToUpstream(procurementOrderID uint) error {
 	procOrder, err := s.procRepo.GetByID(procurementOrderID)
@@ -55,6 +58,12 @@ func (s *Service) SubmitToUpstream(procurementOrderID uint) error {
 		return nil // 永久性错误，不重试
 	}
 	item := localOrder.Items[0]
+
+	// 上游文档 §7：quantity 为正整数且 ≤100，超限属永久性错误，直接拒绝且不重试。
+	if item.Quantity < 1 || item.Quantity > maxUpstreamOrderQuantity {
+		return s.handleSubmitFailure(procOrder, connection,
+			fmt.Sprintf("quantity %d out of upstream limit (1..%d)", item.Quantity, maxUpstreamOrderQuantity), false)
+	}
 
 	// 查找 SKU 映射
 	upstreamSKUID, found, err := s.skuMapRepo.FindUpstreamSKUID(item.SKUID)

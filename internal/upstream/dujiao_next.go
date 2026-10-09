@@ -66,6 +66,9 @@ func extractUpstreamErrorCode(err error) string {
 // maxProductPageSize 上游文档 §6.1 规定 page_size 最大 50，超出会被上游拒绝。
 const maxProductPageSize = 50
 
+// maxUpstreamOrderQuantity 上游文档 §7 规定单次下单数量上限 100。
+const maxUpstreamOrderQuantity = 100
+
 // DujiaoNextAdapter Dujiao-Next 协议适配器
 type DujiaoNextAdapter struct {
 	baseURL    string
@@ -170,6 +173,10 @@ func (a *DujiaoNextAdapter) GetProduct(ctx context.Context, productID uint) (*Up
 
 // CreateOrder 发起采购单
 func (a *DujiaoNextAdapter) CreateOrder(ctx context.Context, req CreateUpstreamOrderReq) (*CreateUpstreamOrderResp, error) {
+	// 上游文档 §7：quantity 为正整数且 ≤100，本地先拦截。
+	if req.Quantity < 1 || req.Quantity > maxUpstreamOrderQuantity {
+		return nil, fmt.Errorf("quantity %d out of upstream limit (1..%d)", req.Quantity, maxUpstreamOrderQuantity)
+	}
 	// 上游文档 §7：余额下单只支持 wallet，显式传值便于上游按钱包扣款。
 	if strings.TrimSpace(req.PaymentMode) == "" {
 		req.PaymentMode = "wallet"
