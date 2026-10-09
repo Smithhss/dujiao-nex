@@ -3,11 +3,14 @@ package upstream
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	siteconnectiondomain "github.com/dujiao-next/internal/modules/siteconnection/domain"
 )
@@ -129,5 +132,41 @@ func TestUpstreamNonOKResponseDoesNotLeakBody(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "502") {
 		t.Fatalf("错误信息应保留 HTTP 状态码: %v", err)
+	}
+}
+
+// TestAdapterSharesPackageLevelLimiter 适配器每次新建，但必须共享包级限速器；
+// 配额耗尽时 doRequest 应返回 ErrUpstreamThrottled 且不发出请求。
+func TestAdapterSharesPackageLevelLimiter(t *testing.T) {
+	var requests int32
+	adapter, closeFn := newTestAdapter(t, func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"items":[],"total":0,"page":1,"page_size":50}`))
+	})
+	defer closeFn()
+
+	if adapter.limiter == nil {
+		t.Fatal("适配器应绑定包级限速器")
+	}
+
+	// 用该凭证的限速器把 60 次/分钟配额耗尽（计数器共享，等价于 60 次真实请求）。
+	for i := 0; i < maxUpstreamRequestsPerMinute; i++ {
+		release, _, err := adapter.limiter.acquire(context.Background(), classRead)
+		if err != nil {
+			t.Fatalf("预热第 %d 次失败: %v", i+1, err)
+		}
+		release()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	_, err := adapter.ListProducts(ctx, ListProductsOpts{Page: 1, PageSize: 50})
+	if !errors.Is(err, ErrUpstreamThrottled) {
+		t.Fatalf("配额耗尽后应返回 ErrUpstreamThrottled，实际 %v", err)
+	}
+	if got := atomic.LoadInt32(&requests); got != 0 {
+		t.Fatalf("被限速时不应发出请求，实际发出 %d 次", got)
 	}
 }

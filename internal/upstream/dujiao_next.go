@@ -97,18 +97,23 @@ type DujiaoNextAdapter struct {
 	apiSecret  string
 	uploadsDir string
 	client     *http.Client
+	// limiter 按凭证（baseURL+apiKey 指纹）在包级注册表共享——
+	// 适配器每次调用都会新建，限速状态不能放在实例上。
+	limiter *connectionLimiter
 }
 
 // NewDujiaoNextAdapter 创建 Dujiao-Next 适配器
 func NewDujiaoNextAdapter(conn *siteconnectiondomain.Connection, uploadsDir string) *DujiaoNextAdapter {
+	baseURL := strings.TrimRight(conn.BaseURL, "/")
 	return &DujiaoNextAdapter{
-		baseURL:    strings.TrimRight(conn.BaseURL, "/"),
+		baseURL:    baseURL,
 		apiKey:     conn.ApiKey,
 		apiSecret:  conn.ApiSecret,
 		uploadsDir: uploadsDir,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		limiter: limiterFor(baseURL, conn.ApiKey),
 	}
 }
 
@@ -303,6 +308,15 @@ func (a *DujiaoNextAdapter) doRequest(ctx context.Context, method, path string, 
 	signPath := path
 	if idx := strings.Index(path, "?"); idx > 0 {
 		signPath = path[:idx]
+	}
+
+	// 本地限速（上游文档 §11）：等待受 ctx 约束，超时返回可重试的 ErrUpstreamThrottled。
+	if a.limiter != nil {
+		releaseLimiter, _, limitErr := a.limiter.acquire(ctx, classifyUpstreamRequest(method, signPath))
+		if limitErr != nil {
+			return limitErr
+		}
+		defer releaseLimiter()
 	}
 
 	timestamp := time.Now().Unix()
