@@ -202,6 +202,9 @@ func TestBatchImportUpstreamProductsAutoCreatesCategory(t *testing.T) {
 	if imported.CategoryID == 0 {
 		t.Fatalf("expected imported product to be assigned to auto-created category")
 	}
+	if imported.MaxPurchaseQuantity != 100 {
+		t.Fatalf("imported product quantity limit = %d, want 100", imported.MaxPurchaseQuantity)
+	}
 
 	var category categorydomain.Category
 	if err := db.First(&category, imported.CategoryID).Error; err != nil {
