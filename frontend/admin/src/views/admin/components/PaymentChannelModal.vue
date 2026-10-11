@@ -1003,24 +1003,22 @@ function resetFormForCreate() {
   applyingChannelData.value = false
 }
 
-// --- Watch modelValue to reset form when dialog opens in create mode ---
-watch(
-  () => props.modelValue,
-  (open) => {
-    if (open && props.channelId === null) {
-      resetFormForCreate()
-    }
-  }
-)
-
-// --- Watch channelId to load data or reset ---
+// Closing or switching channels invalidates pending loads and clears credentials.
+let channelLoadGeneration = 0
 
 watch(
-  () => props.channelId,
-  async (id) => {
+  [() => props.channelId, () => props.modelValue],
+  async ([id, open]) => {
+    const generation = ++channelLoadGeneration
     error.value = ''
     wechatPublicKeyTestResult.value = null
     showAdvanced.value = false
+    resetAllConfigs()
+    form.config_json = ''
+    if (!open) {
+      applyingChannelData.value = false
+      return
+    }
     if (id === null) {
       // Create mode: reset form
       resetFormForCreate()
@@ -1029,6 +1027,9 @@ watch(
       try {
         applyingChannelData.value = true
         const response = await adminAPI.getPaymentChannel(id)
+        if (generation !== channelLoadGeneration || !props.modelValue) {
+          return
+        }
         const channel = response.data.data
         form.name = channel.name
         form.icon = channel.icon || ''
@@ -1064,12 +1065,16 @@ watch(
           resetAllConfigs()
         }
       } catch (err: any) {
-        error.value = err?.message || t('admin.paymentChannels.errors.fetchFailed')
+        if (generation === channelLoadGeneration) {
+          error.value = err?.message || t('admin.paymentChannels.errors.fetchFailed')
+        }
       } finally {
-        applyingChannelData.value = false
-        const allowed = interactionModeOptions.value.map((item) => item.value)
-        if (!allowed.includes(form.interaction_mode)) {
-          form.interaction_mode = pickDefaultInteractionMode()
+        if (generation === channelLoadGeneration) {
+          applyingChannelData.value = false
+          const allowed = interactionModeOptions.value.map((item) => item.value)
+          if (!allowed.includes(form.interaction_mode)) {
+            form.interaction_mode = pickDefaultInteractionMode()
+          }
         }
       }
     }
@@ -1389,7 +1394,7 @@ const closeModal = () => {
             </div>
             <div v-if="epayConfig.epay_version === 'v1'" class="min-w-0">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.merchantKey') }}</label>
-              <Input v-model="epayConfig.merchant_key" :placeholder="t('admin.paymentChannels.modal.merchantKeyPlaceholder')" />
+              <Input v-model="epayConfig.merchant_key" type="password" autocomplete="new-password" :placeholder="t('admin.paymentChannels.modal.merchantKeyPlaceholder')" />
             </div>
             <div v-else class="min-w-0 md:col-span-2">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.privateKey') }}</label>
@@ -1428,7 +1433,7 @@ const closeModal = () => {
             </div>
             <div class="min-w-0">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.paypalClientSecret') }}</label>
-              <Input v-model="paypalConfig.client_secret" :placeholder="t('admin.paymentChannels.modal.paypalClientSecretPlaceholder')" />
+              <Input v-model="paypalConfig.client_secret" type="password" autocomplete="new-password" :placeholder="t('admin.paymentChannels.modal.paypalClientSecretPlaceholder')" />
             </div>
             <div class="min-w-0">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.paypalBaseUrl') }}</label>
@@ -1471,7 +1476,7 @@ const closeModal = () => {
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2 [&>*]:min-w-0">
             <div class="min-w-0 md:col-span-2">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.stripeSecretKey') }}</label>
-              <Input v-model="stripeConfig.secret_key" :placeholder="t('admin.paymentChannels.modal.stripeSecretKeyPlaceholder')" />
+              <Input v-model="stripeConfig.secret_key" type="password" autocomplete="new-password" :placeholder="t('admin.paymentChannels.modal.stripeSecretKeyPlaceholder')" />
             </div>
             <div class="min-w-0">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.stripePublishableKey') }}</label>
@@ -1479,7 +1484,7 @@ const closeModal = () => {
             </div>
             <div class="min-w-0">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.stripeWebhookSecret') }}</label>
-              <Input v-model="stripeConfig.webhook_secret" :placeholder="t('admin.paymentChannels.modal.stripeWebhookSecretPlaceholder')" />
+              <Input v-model="stripeConfig.webhook_secret" type="password" autocomplete="new-password" :placeholder="t('admin.paymentChannels.modal.stripeWebhookSecretPlaceholder')" />
             </div>
             <div class="min-w-0">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.stripeSuccessUrl') }}</label>
@@ -1526,7 +1531,7 @@ const closeModal = () => {
             </div>
             <div class="min-w-0">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.wechatApiV3Key') }}</label>
-              <Input v-model="wechatConfig.api_v3_key" :placeholder="t('admin.paymentChannels.modal.wechatApiV3KeyPlaceholder')" />
+              <Input v-model="wechatConfig.api_v3_key" type="password" autocomplete="new-password" :placeholder="t('admin.paymentChannels.modal.wechatApiV3KeyPlaceholder')" />
             </div>
             <div class="min-w-0 md:col-span-2">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.wechatVerificationMode') }}</label>
@@ -1683,7 +1688,7 @@ const closeModal = () => {
             </div>
             <div class="min-w-0 md:col-span-2">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.bepusdtAuthToken') }}</label>
-              <Input v-model="bepusdtConfig.auth_token" :placeholder="t('admin.paymentChannels.modal.bepusdtAuthTokenPlaceholder')" />
+              <Input v-model="bepusdtConfig.auth_token" type="password" autocomplete="new-password" :placeholder="t('admin.paymentChannels.modal.bepusdtAuthTokenPlaceholder')" />
             </div>
             <div class="min-w-0">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.bepusdtOrderMode') }}</label>
@@ -1734,7 +1739,7 @@ const closeModal = () => {
             </div>
             <div class="min-w-0">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.epusdtSecretKey') }}</label>
-              <Input v-model="epusdtConfig.secret_key" :placeholder="t('admin.paymentChannels.modal.epusdtSecretKeyPlaceholder')" />
+              <Input v-model="epusdtConfig.secret_key" type="password" autocomplete="new-password" :placeholder="t('admin.paymentChannels.modal.epusdtSecretKeyPlaceholder')" />
             </div>
             <div class="min-w-0">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.epusdtOrderMode') }}</label>
@@ -1781,7 +1786,7 @@ const closeModal = () => {
             </div>
             <div class="min-w-0 md:col-span-2">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.tokenpayNotifySecret') }}</label>
-              <Input v-model="tokenpayConfig.notify_secret" :placeholder="t('admin.paymentChannels.modal.tokenpayNotifySecretPlaceholder')" />
+              <Input v-model="tokenpayConfig.notify_secret" type="password" autocomplete="new-password" :placeholder="t('admin.paymentChannels.modal.tokenpayNotifySecretPlaceholder')" />
             </div>
             <div class="min-w-0">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.tokenpayCurrency') }}</label>
@@ -1816,7 +1821,7 @@ const closeModal = () => {
             </div>
             <div class="min-w-0">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.okpayMerchantToken') }}</label>
-              <Input v-model="okpayConfig.merchant_token" :placeholder="t('admin.paymentChannels.modal.okpayMerchantTokenPlaceholder')" />
+              <Input v-model="okpayConfig.merchant_token" type="password" autocomplete="new-password" :placeholder="t('admin.paymentChannels.modal.okpayMerchantTokenPlaceholder')" />
             </div>
             <div class="min-w-0">
               <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.okpayExchangeRate') }}</label>
