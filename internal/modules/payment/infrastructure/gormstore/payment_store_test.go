@@ -43,6 +43,82 @@ func setupStoreTest(t *testing.T) (*Store, *gorm.DB) {
 	return New(db, "test-guest-credential-secret-with-32-bytes"), db
 }
 
+func TestChannelCreatePreservesActiveState(t *testing.T) {
+	_, db := setupStoreTest(t)
+	channels := NewChannelStore(db)
+	for _, active := range []bool{false, true} {
+		t.Run(fmt.Sprintf("active_%t", active), func(t *testing.T) {
+			channel := &paymentdomain.PaymentChannel{
+				Name:            fmt.Sprintf("channel-%t", active),
+				ProviderType:    constants.PaymentProviderEpusdt,
+				ChannelType:     "epusdt",
+				InteractionMode: constants.PaymentInteractionRedirect,
+				IsActive:        active,
+			}
+			if err := channels.Create(channel); err != nil {
+				t.Fatalf("create channel: %v", err)
+			}
+			stored, err := channels.GetByID(channel.ID)
+			if err != nil || stored == nil {
+				t.Fatalf("load channel: %v", err)
+			}
+			if channel.IsActive != active || stored.IsActive != active {
+				t.Fatalf("requested active=%t, response=%t, persisted=%t", active, channel.IsActive, stored.IsActive)
+			}
+		})
+	}
+	available, total, err := channels.List(paymentcontract.ChannelListFilter{ActiveOnly: true, Page: 1, PageSize: 20})
+	if err != nil || total != 1 || len(available) != 1 || available[0].Name != "channel-true" {
+		t.Fatalf("active-only list must exclude newly disabled channel: total=%d rows=%v err=%v", total, available, err)
+	}
+}
+
+func TestChannelActiveDefaultMigrationPreservesExistingStates(t *testing.T) {
+	type legacyChannel struct {
+		paymentdomain.PaymentChannel
+		IsActive bool `gorm:"index;not null;default:true"`
+	}
+	_, db := setupStoreTest(t)
+	if err := db.Migrator().DropTable(&paymentdomain.PaymentChannel{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table("payment_channels").AutoMigrate(&legacyChannel{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, active := range []bool{true, false} {
+		channel := &legacyChannel{PaymentChannel: paymentdomain.PaymentChannel{
+			Name: fmt.Sprintf("legacy-%t", active), ProviderType: constants.PaymentProviderEpusdt,
+			ChannelType: "epusdt", InteractionMode: constants.PaymentInteractionRedirect,
+		}, IsActive: true}
+		if err := db.Table("payment_channels").Create(channel).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Table("payment_channels").Where("id = ?", channel.ID).Update("is_active", active).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.AutoMigrate(&paymentdomain.PaymentChannel{}); err != nil {
+		t.Fatalf("migrate legacy default: %v", err)
+	}
+	var channels []paymentdomain.PaymentChannel
+	if err := db.Order("id ASC").Find(&channels).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(channels) != 2 || !channels[0].IsActive || channels[1].IsActive {
+		t.Fatalf("migration changed existing channel states: %+v", channels)
+	}
+	newChannel := &paymentdomain.PaymentChannel{Name: "disabled-after-migration", ProviderType: constants.PaymentProviderEpusdt,
+		ChannelType: "epusdt", InteractionMode: constants.PaymentInteractionRedirect, IsActive: false}
+	store := NewChannelStore(db)
+	if err := store.Create(newChannel); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.GetByID(newChannel.ID)
+	if err != nil || stored == nil || stored.IsActive {
+		t.Fatalf("disabled creation after migration failed: %+v, %v", stored, err)
+	}
+}
+
 func TestPaymentStoresExcludeSoftDeletedRecords(t *testing.T) {
 	repo, db := setupStoreTest(t)
 	channels := NewChannelStore(db)

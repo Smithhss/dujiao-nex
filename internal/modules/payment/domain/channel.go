@@ -25,7 +25,7 @@ type PaymentChannel struct {
 	MemberLevels       jsonslice.Uints   `gorm:"type:json" json:"member_levels"`                          // 会员等级限制
 	PaymentTypes       jsonslice.Strings `gorm:"type:json" json:"payment_types"`                          // 付款类型限制
 	ConfigJSON         jsonmap.JSON      `gorm:"type:json" json:"config_json"`                            // 渠道配置
-	IsActive           bool              `gorm:"index;not null;default:true" json:"is_active"`            // 是否启用
+	IsActive           bool              `gorm:"index;not null;default:false" json:"is_active"`           // 避免 GORM 在创建时把显式 false 替换为 true
 	SortOrder          int               `gorm:"not null;default:0" json:"sort_order"`                    // 排序
 	CreatedAt          time.Time         `gorm:"index" json:"created_at"`                                 // 创建时间
 	UpdatedAt          time.Time         `gorm:"index" json:"updated_at"`                                 // 更新时间
